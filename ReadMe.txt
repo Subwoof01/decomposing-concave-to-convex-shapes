@@ -1,0 +1,1 @@
+After downloading the project, run `npm install` to install all the necessary npm packages.
