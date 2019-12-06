@@ -53,7 +53,17 @@ export class HullLibrary {
     public static InitShapeConversion(app: PIXI.Application)
     {
         HullLibrary.SpriteAndHull.forEach(element => {
-            HullLibrary.ConvertToShapes(element.name, new HullObject(element.body.convexHull), app);
+            let hulls = HullLibrary.ConvertToShapes(element.name, new HullObject(element.body.convexHull), app);
+            hulls.forEach(h => {
+                let shapeGraphics = new PIXI.Graphics;
+                var poly = new PIXI.Polygon(h.hull);
+                shapeGraphics.beginFill(0xFFFFFF, 0.2);
+                let colour = '0x'+(Math.random()*0xFFFFFF<<0).toString(16);
+                shapeGraphics.lineStyle(1, Number(colour));
+                shapeGraphics.drawPolygon(poly);
+                shapeGraphics.endFill();
+                app.stage.addChild(shapeGraphics);
+            });
         });
     }
 
@@ -194,12 +204,124 @@ export class HullLibrary {
 
     }
 
-    public static ConvertToShapes(name: string, hullContainer: HullObject, app?: PIXI.Application, depth?: number)
+    private static findIntersectionIndex(prev: PIXI.Point, checkPoint: PIXI.Point, next: PIXI.Point, margin: number, hull: PIXI.Point[], app): { index: number, point: PIXI.Point }
+    {
+        let intersection: { index: number, point: PIXI.Point } = { index: -1, point: new PIXI.Point(-1, -1) };
+
+        for (let j = 0; j < hull.length; j++)
+        {
+            if (hull[j].x === checkPoint.x &&
+                hull[j].y === checkPoint.y)
+            {
+                continue;
+            }
+
+            let nextB: PIXI.Point, prevB: PIXI.Point;
+
+            if (j + 1 >= hull.length)
+                nextB = hull[0];
+            else
+                nextB = hull[j + 1];
+
+            let intersectPoint = HullLibrary.LinesIntersect(prev, checkPoint, hull[j], nextB, app);
+
+            if (intersectPoint.x > 0 && intersectPoint.y > 0 &&
+                ((intersectPoint.x > checkPoint.x + margin ||
+                intersectPoint.x < checkPoint.x - margin) ||
+                (intersectPoint.y > checkPoint.y + margin ||
+                intersectPoint.y < checkPoint.y - margin)))
+            {
+                let distanceAC = new PIXI.Point(Math.abs(intersectPoint.x - hull[j].x), Math.abs(intersectPoint.y - hull[j].y));
+                let distanceBC = new PIXI.Point(Math.abs(intersectPoint.x - nextB.x), Math.abs(intersectPoint.y - nextB.y));
+                let distanceAB = new PIXI.Point(Math.abs(nextB.x - hull[j].x), Math.abs(nextB.y - hull[j].y));
+
+                if (distanceAC.x + distanceBC.x === distanceAB.x &&
+                    distanceAC.y + distanceBC.y === distanceAB.y)
+                {
+                    if ((intersectPoint.x === prev.x &&
+                        intersectPoint.y === prev.y) ||
+                        (intersectPoint.x === next.x &&
+                        intersectPoint.y === next.y))
+                    {
+                        continue;
+                    }
+
+                    let distance = Math.sqrt(
+                        Math.pow(intersectPoint.x - checkPoint.x, 2) + Math.pow(intersectPoint.y + checkPoint.y, 2)
+                    );
+
+                    // let lineB = new PIXI.Graphics();
+                    // let colour = '0x'+(Math.random()*0xFFFFFF<<0).toString(16);
+                    // lineB.beginFill(0x00FFA8, 5);
+                    // lineB.lineStyle(1);
+                    // lineB.moveTo(hull[j].x, hull[j].y);
+                    // lineB.lineTo(nextB.x, nextB.y);
+                    // lineB.zIndex = 500;
+                    // lineB.endFill();
+                    // app.stage.addChild(lineB);
+
+                    // console.log('distance', lastDistanceX, lastDistanceY);
+                    // console.log('point', intersectPoint);
+                    // console.log('intersect', intersection.point);
+                    // let lineA = new PIXI.Graphics();
+                    // lineA.beginFill(0xFF5555, 5);
+                    // lineA.lineStyle(1);
+                    // lineA.moveTo(checkPoint.x, checkPoint.y);
+                    // lineA.lineTo(intersectPoint.x, intersectPoint.y);
+                    // lineA.zIndex = 120;
+                    // lineA.endFill();
+                    // app.stage.addChild(lineA);
+
+                    let pointA = new PIXI.Graphics();
+                    pointA.beginFill(0xFF00C6, 1);
+                    pointA.drawCircle(intersectPoint.x, intersectPoint.y, 2);
+                    pointA.zIndex = 110;
+                    pointA.endFill();
+                    app.stage.addChild(pointA);
+                    console.log('intersectLine', checkPoint, intersection.point);
+                    console.log('checkPoint', checkPoint);
+                    
+                    return intersection = { index: j, point: intersectPoint };
+
+                    // if (Math.abs(intersectPoint.x - intersection.point.x) < Math.abs(lastDistanceX) || Math.abs(intersectPoint.y - intersection.point.y) < Math.abs(lastDistanceY))
+                    // {
+                    //     lastDistanceX = Math.abs(intersectPoint.x - intersection.point.x);
+                    //     lastDistanceY = Math.abs(intersectPoint.y - intersection.point.y);
+                    //     // console.log('distanceXY', lastDistanceX, lastDistanceY);
+                    //     // console.log('asd', intersection);
+                        
+                    // }
+                }
+            }
+        }
+
+        return intersection;
+    }
+
+    public static ConvertToShapes(name: string, hullContainer: HullObject, app?: PIXI.Application, depth?: number): Array<HullObject>
     {
         let prev, next;
+        let allShapes = new Array<HullObject>();
 
-        let newShape = [];
+        let newShape = new Array<PIXI.Point>();
+        let oldShape = new Array<PIXI.Point>();
 
+        //#region debug stuff
+        if (depth === undefined)
+        {
+            depth = 0;
+        }
+
+        let l = 8;
+        if (depth === 2)
+            l = 0;
+        if (depth === 3)
+            l = 0;
+        if (depth === 4)
+            l = 0;
+        //#endregion
+
+        loop1:
         for (let i = 0; i < hullContainer.hull.length; i++)
         {
             if (i + 1 >= hullContainer.hull.length)
@@ -213,97 +335,149 @@ export class HullLibrary {
                 prev = hullContainer.hull[i - 1];
 
             
-            let isConcave = HullLibrary.isConcaveAngle(prev, hullContainer.hull[i], next, app);
+            let isConcave = HullLibrary.isConcaveAngle(prev, next, hullContainer.hull[i], app);
             
             if (isConcave)
             {
-                for (let j = 0; j < hullContainer.hull.length; j++)
-                {
-                    let nextB: PIXI.Point;
-
-                    if (j + 1 >= hullContainer.hull.length)
-                        nextB = hullContainer.hull[0];
-                    else
-                        nextB = hullContainer.hull[j + 1];
-    
-                    let checkPoint = new PIXI.Point(hullContainer.hull[i].x, hullContainer.hull[i].y);
-
-                    let intersectPoint = HullLibrary.LinesIntersect(prev, checkPoint, hullContainer.hull[j], nextB, app);
-
-                    let margin = 1;
-                    if (intersectPoint.x > 0 && intersectPoint.y > 0 &&
-                        ((intersectPoint.x > hullContainer.hull[i].x + margin ||
-                        intersectPoint.x < hullContainer.hull[i].x - margin) ||
-                        (intersectPoint.y > hullContainer.hull[i].y + margin ||
-                        intersectPoint.y < hullContainer.hull[i].y - margin)))
-                    {
-                        let distanceAC = new PIXI.Point(Math.abs(intersectPoint.x - hullContainer.hull[j].x), Math.abs(intersectPoint.y - hullContainer.hull[j].y));
-                        let distanceBC = new PIXI.Point(Math.abs(intersectPoint.x - nextB.x), Math.abs(intersectPoint.y - nextB.y));
-                        let distanceAB = new PIXI.Point(Math.abs(nextB.x - hullContainer.hull[j].x), Math.abs(nextB.y - hullContainer.hull[j].y));
-
-                        if (distanceAC.x + distanceBC.x === distanceAB.x &&
-                            distanceAC.y + distanceBC.y === distanceAB.y)
-                        {
-                            console.log('current', hullContainer.hull[i]);
-                            
-                            //#region Debug drawing
-                            let lineP = new PIXI.Graphics();
-                            lineP.beginFill(0xFF5555, 1);
-                            lineP.lineStyle(1);
-                            lineP.moveTo(hullContainer.hull[i].x, hullContainer.hull[i].y);
-                            lineP.lineTo(intersectPoint.x, intersectPoint.y);
-                            lineP.zIndex = 1000;
-                            lineP.endFill();
-                            app.stage.addChild(lineP);
-
-                            let pointP = new PIXI.Graphics();
-                            pointP.beginFill(0x55FF55, 1);
-                            pointP.drawCircle(intersectPoint.x, intersectPoint.y, 1);
-                            pointP.zIndex = 1000;
-                            pointP.endFill();
-                            app.stage.addChild(pointP);
-                            //#endregion
+                let margin = 1;
                 
-                            intersectPoint.x = Math.round(intersectPoint.x);
-                            intersectPoint.y = Math.round(intersectPoint.y);
-                            console.log('intersect', intersectPoint);
-                            let toRemove = Math.abs(j - i);
-                            console.log(toRemove);
-                            let leftover = 0;
-                            if (toRemove > hullContainer.hull.length)
-                            {
-                                leftover = toRemove - hullContainer.hull.length - 1;
-                                toRemove = hullContainer.hull.length - 1;
-                            }
-                            
-                            newShape = hullContainer.hull.splice(i, toRemove);
-                            newShape.push(intersectPoint);
-                            let toAddLeftovers = hullContainer.hull.splice(0,leftover);
-                            toAddLeftovers.forEach(p => {
-                                newShape.push(p);
-                            });
+                let intersectA = HullLibrary.findIntersectionIndex(prev, hullContainer.hull[i], next, margin, hullContainer.hull, app);
+                console.log('A',intersectA.index);
+                console.log('A coords', hullContainer.hull[intersectA.index]);
 
-                            hullContainer.hull.splice(1,0,intersectPoint);
+                if (intersectA.index < 0 || hullContainer.hull[intersectA.index] === undefined)
+                {
+                    continue;
+                }
 
-                            console.log(newShape);
-                            console.log(hullContainer.hull);
+                let intersectB = HullLibrary.findIntersectionIndex(next, hullContainer.hull[i], prev, margin, hullContainer.hull, app);
+                console.log('B',intersectB.index);
+                console.log('B coords', hullContainer.hull[intersectB.index]);
 
-                            let newShapeGraphics = new PIXI.Graphics;
-                            newShapeGraphics.lineStyle(1, 0xFFFFFF);
-                            var poly = new PIXI.Polygon(newShape);
-                            newShapeGraphics.drawPolygon(poly);
-                            app.stage.addChild(newShapeGraphics);
+                if (intersectB.index < 0 || hullContainer.hull[intersectB.index] === undefined)
+                {
+                    continue;
+                }
 
-                            // HullLibrary.ConvertToShapes(name, new HullObject(hullContainer.hull), app);
-                            // HullLibrary.ConvertToShapes(name, new HullObject(newShape), app);
-                            return;
-                        }
+                let intersectCLinePoint = new PIXI.Point(
+                    Math.round((intersectA.point.x + intersectB.point.x) / 2),
+                    Math.round((intersectA.point.y + intersectB.point.y) / 2)
+                );
+                let intersectC = HullLibrary.findIntersectionIndex(hullContainer.hull[i], intersectCLinePoint, next, margin, hullContainer.hull, app);
+                if (depth === 1)
+                    console.log('aaa', intersectC, i);
+                    
+                intersectC.index += 1;
+                intersectC.point.x = Math.round(intersectC.point.x);
+                intersectC.point.y = Math.round(intersectC.point.y);
+                console.log('C',intersectC.index);
+                console.log('C coords', intersectC.point);
+
+                hullContainer.hull.splice(intersectC.index, 0, intersectC.point);
+
+                let index = (intersectC.index < i) ? i + 1 : i;
+                
+                let pointA = new PIXI.Graphics();
+                pointA.beginFill(0x5555FF, 1);
+                pointA.drawCircle(intersectCLinePoint.x, intersectCLinePoint.y, 2);
+                pointA.zIndex = 1000;
+                pointA.endFill();
+                app.stage.addChild(pointA);
+
+                let pointB = new PIXI.Graphics();
+                pointB.beginFill(0xFF5A00, 2);
+                pointB.drawCircle(hullContainer.hull[index].x, hullContainer.hull[index].y, 2);
+                pointB.zIndex = 120;
+                pointB.endFill();
+                app.stage.addChild(pointB);
+
+                console.log('i',index);
+                console.log('i coords', hullContainer.hull[index]);
+
+                if (intersectC.index < 0)
+                {
+                    continue;
+                }
+
+                let lineC = new PIXI.Graphics();
+                lineC.beginFill(0x22FF22, 1);
+                lineC.lineStyle(1);
+                lineC.moveTo(hullContainer.hull[index].x, hullContainer.hull[index].y);
+                lineC.lineTo(intersectC.point.x, intersectC.point.y);
+                lineC.zIndex = 1000;
+                lineC.endFill();
+                app.stage.addChild(lineC);
+                
+                let j = index;
+                while (j !== intersectC.index)
+                {
+                    if (j > hullContainer.hull.length - 1)
+                    {
+                        j = 0;
                     }
 
+                    console.log(j, hullContainer.hull.length - 1);
+
+                    newShape.push(hullContainer.hull[j]);
+                    console.log('added to newShape');
+                    
+                    j++;
                 }
+                // if (j === i || j === i - 1 || j === i + 1)
+                // {
+                //     console.log('asd');
+                    
+                //     if (j > 2)
+                //         j = i - 2;
+                //     else if (hullContainer.hull.length - 1 > 2)
+                //         j = i + 2
+                        
+                // }
                 
+                console.log(j);
+                
+                newShape.push(hullContainer.hull[j])
+                console.log('newShape', newShape);
+
+                let garbage;
+                for (let k = 1; k < newShape.length - 1; k++)
+                {
+                    let index = hullContainer.hull.indexOf(newShape[k]);
+                    garbage = hullContainer.hull.splice(index, 1);
+                }
+                garbage = undefined;
+
+                oldShape = hullContainer.hull;
+                console.log('oldshape',oldShape);
+                
+                break loop1;
             }
         }
+
+        console.log('length', newShape.length);
+        if (newShape.length <= 2)
+        {
+            allShapes.push(new HullObject(hullContainer.hull));
+            return allShapes;
+        }
+        else if (newShape.length === 3)
+        {
+            // allShapes.push(new HullObject(newShape));
+            allShapes.push(new HullObject(hullContainer.hull));
+            return allShapes;
+        }
+
+        HullLibrary.ConvertToShapes(name, new HullObject(newShape), app, depth + 1).forEach(s =>
+        {
+            allShapes.push(s);
+        });
+        HullLibrary.ConvertToShapes(name, new HullObject(oldShape), app, depth + 1).forEach(s =>
+        {
+            allShapes.push(s);
+        });
+        console.log('allShapes', allShapes);
+        
+        return allShapes;
     }
 
     private static findLineIntersection(a: PIXI.Point, b: PIXI.Point, c: PIXI.Point, d: PIXI.Point, app?: PIXI.Application)
@@ -374,8 +548,21 @@ export class HullLibrary {
         let nextEdge = new PIXI.Point(next.x - current.x, next.y - current.y);
 
         var angle = ((Math.atan2(nextEdge.x, nextEdge.y) - Math.atan2(previousEdge.x, previousEdge.y) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
+        console.log(angle);
 
-        if (angle > 0)
+        let BA = new PIXI.Point(current.x - prev.x, current.y - prev.y);
+        let bx = BA.x;
+        BA.x = -BA.y;
+        BA.y = bx;
+
+        let CB = new PIXI.Point(next.x - current.x, next.y - current.y);
+
+        let dotProductABC = BA.x * CB.x + BA.y * CB.y;
+        console.log('dotProduct',dotProductABC);
+        
+        
+
+        if (dotProductABC < 0)
         {
             let pointB = new PIXI.Graphics();
             pointB.beginFill(0x0000FF, 2);
@@ -385,12 +572,12 @@ export class HullLibrary {
             app.stage.addChild(pointB);
             return false
         }
-        else if (angle < 0)
+        else if (dotProductABC > 0)
         {
             let pointB = new PIXI.Graphics();
             pointB.beginFill(0xFF0000, 2);
             pointB.drawCircle(current.x, current.y, 2);
-            pointB.zIndex = 100;
+            pointB.zIndex = 110;
             pointB.endFill();
             app.stage.addChild(pointB);
 
@@ -459,21 +646,21 @@ export class HullLibrary {
 
     public static LinesIntersect(p1: PIXI.Point, p2: PIXI.Point, currentPoint: PIXI.Point, nextPoint: PIXI.Point, app?: PIXI.Application)
     {
-        var intersectPoint = new PIXI.Point(
+        var intersectPointA = new PIXI.Point(
             ((p1.x * p2.y - p1.y * p2.x) * (currentPoint.x - nextPoint.x) - (p1.x - p2.x) * (currentPoint.x * nextPoint.y - currentPoint.y * nextPoint.x)) / ((p1.x - p2.x) * (currentPoint.y - nextPoint.y) - (p1.y - p2.y) * (currentPoint.x - nextPoint.x)),
             ((p1.x * p2.y - p1.y * p2.x) * (currentPoint.y - nextPoint.y) - (p1.y - p2.y) * (currentPoint.x * nextPoint.y - currentPoint.y * nextPoint.x)) / ((p1.x - p2.x) * (currentPoint.y - nextPoint.y) - (p1.y - p2.y) * (currentPoint.x - nextPoint.x))
         );
 
-        if (!Number.isNaN(intersectPoint.x) && !Number.isNaN(intersectPoint.y)) {
+        if (!Number.isNaN(intersectPointA.x) && !Number.isNaN(intersectPointA.y)) {
 
-            let point = new PIXI.Graphics();
-            point.beginFill(0x5555FF, 1);
-            point.drawCircle(intersectPoint.x, intersectPoint.y, 1);
-            point.zIndex = 100;
-            point.endFill();
-            app.stage.addChild(point);
+            // let point = new PIXI.Graphics();
+            // point.beginFill(0x5555FF, 1);
+            // point.drawCircle(intersectPointA.x, intersectPointA.y, 2);
+            // point.zIndex = 100;
+            // point.endFill();
+            // app.stage.addChild(point);
 
-            return intersectPoint;
+            return intersectPointA;
         }
 
         return new PIXI.Point(-1, -1);

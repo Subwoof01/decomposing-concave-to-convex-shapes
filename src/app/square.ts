@@ -40,10 +40,11 @@ export class Box
             }
         }
 
-        var theHull = require('concaveman')(points, 0.2, 5);
+        // 0.2, 5
+        var theHull = require('concaveman')(points, 0.15, 10);
         var index = 0;
 
-        var toSkip = ((theHull.length * 0.05) | 0);
+        var toSkip = ((theHull.length * 0.035) | 0);
         if(toSkip == 0){
             toSkip = 4;
         }
