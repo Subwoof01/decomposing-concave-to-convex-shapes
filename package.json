@@ -35,7 +35,7 @@
     "karma-chrome-launcher": "2.2.0",
     "karma-jasmine": "2.0.1",
     "karma-typescript": "^4.1.1",
-    "karma-typescript-es6-transform": "^4.1.1",
+    "karma-typescript-es6-transform": "^5.5.4",
     "parcel-bundler": "^1.12.4",
     "rimraf": "^2.7.1",
     "typescript": "2.9.2"
